@@ -1,0 +1,20 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  train-test-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -r requirements.txt
+      - name: Unit tests (features, metrics, drift)
+        run: PYTHONPATH=src:. pytest -q tests/test_features.py
+      - name: Retrain model from source data
+        run: PYTHONPATH=src:. python -m credit_risk.train
+      - name: Quality gate (fail if ROC-AUC < 0.76)
+        run: python -c "import json;m=json.load(open('reports/metrics.json'));a=m['lightgbm_calibrated']['test']['roc_auc'];print('AUC',a);assert a>=0.76"
+      - name: API tests
+        run: PYTHONPATH=src:. pytest -q tests/test_api.py
+      - name: Build Docker image
+        run: docker build -t credit-risk-api .
